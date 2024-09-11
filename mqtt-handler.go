@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"path/filepath"
+	"strings"
 
 	"github.com/dnstapir/tapir"
 	"github.com/spf13/viper"
@@ -48,27 +50,50 @@ func (h *MqttHandler) Start() {
 	}
 
 	log.Printf("MQTT Engine %s: Adding topic '%s' to MQTT Engine", h.engine.Creator, statusTopic)
-	msg, err := h.engine.PubSubToTopic(statusTopic, nil, validatorkey, nil)
-	if err != nil {
-		TEMExiter("Error adding topic %s to MQTT Engine: %v", statusTopic, err)
-	}
-	log.Printf("MQTT Engine %s: Topic status for MQTT engine %s: %+v", h.engine.Creator, msg)
 
+	subch := make(chan tapir.MqttPkgIn, 100)
+	_, err = h.engine.SubToTopic(statusTopic, validatorkey, subch, "struct", true)
+	if err != nil {
+		TEMExiter("Error adding sub topic %s to MQTT Engine: %v", statusTopic, err)
+	}
 	log.Printf("MQTT Engine %s: Starting", h.engine.Creator)
-	_, _, inbox, err := h.engine.StartEngine()
+	_, _, _, err = h.engine.StartEngine()
 	if err != nil {
 		log.Fatalf("Error starting MQTT engine: %v", err)
 	}
 
-	for msg := range inbox {
-		log.Printf("MQTT Engine %s: Received message: %+v", h.engine.Creator, msg)
-		if msg.Error {
-			log.Printf("Error in received message: %v", msg.ErrorMsg)
-			continue
-		}
+	for pkg := range subch {
 
-		h.logger.LogStatus(msg.Data.TapirFunctionStatus)
-		h.updateStatus(msg.Data.TapirFunctionStatus)
+		//		switch mqttMsg.(type) {
+		//		case tapir.MqttData:
+		//			p := mqttMsg.(tapir.MqttData)
+		// log.Printf("MQTT Engine %s: Received message: %+v", h.engine.Creator, p)
+		log.Printf("TAPIR-SLOGGER MQTT Handler: Received message on topic %s", pkg.Topic)
+
+		switch {
+		case strings.HasPrefix(pkg.Topic, "status/up/"):
+			parts := strings.Split(pkg.Topic, "/")
+			if len(parts) == 4 {
+				edgeId := parts[2]
+				edgeComponent := parts[3]
+
+				var tfs tapir.TapirFunctionStatus
+				err := json.Unmarshal(pkg.Payload, &tfs)
+				if err != nil {
+					log.Printf("MQTT: failed to decode json: %v", err)
+					continue
+				}
+
+				log.Printf("Received status update from sender: %s, component: %s", edgeId, edgeComponent)
+				h.logger.LogStatus(edgeId, edgeComponent, tfs)
+				h.updateStatus(tfs)
+			} else {
+				log.Printf("TAPIR-SLOGGER MQTT Handler: Invalid topic format: %s", pkg.Topic)
+			}
+
+		default:
+			log.Printf("TAPIR-SLOGGER MQTT Handler: Received message on unknown topic %s", pkg.Topic)
+		}
 	}
 }
 

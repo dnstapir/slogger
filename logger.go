@@ -25,7 +25,8 @@ func NewLogger(filename string) *Logger {
 	}
 }
 
-func (l *Logger) LogStatus(status tapir.TapirFunctionStatus) {
+func (l *Logger) LogStatus(edgeId, edgeComponent string, status tapir.TapirFunctionStatus) {
+	l.log.Printf("Status update from TAPIR Edge (id: %s, component: %s)", edgeId, edgeComponent)
 	for _, comp := range status.ComponentStatus {
 		switch comp.Status {
 		case "fail":
