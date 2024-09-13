@@ -24,30 +24,28 @@ import (
 	"github.com/spf13/viper"
 )
 
-type MqttHandler struct {
+type StatusReceiver struct {
 	engine    *tapir.MqttEngine
 	logger    *Logger
+	StatusCh  chan tapir.MqttPkgIn
 	PopStatus map[string]tapir.TapirFunctionStatus // map[id]status
 	EdmStatus map[string]tapir.TapirFunctionStatus // map[id]status
 	// ...
 }
 
-func NewMqttHandler(config *Config, logger *Logger) (*MqttHandler, error) {
-	statusCh := make(chan tapir.ComponentStatusUpdate, 100)
-	engine, err := tapir.NewMqttEngine("tapir-slogger", config.TapirConfig.MqttConfig.ClientID, tapir.TapirSub, statusCh, log.Default())
-	if err != nil {
-		return nil, err
-	}
+func NewStatusReceiver(config *Config, logger *Logger) (*StatusReceiver, error) {
+	statusCh := make(chan tapir.MqttPkgIn, 100)
 
-	return &MqttHandler{
-		engine:    engine,
+	return &StatusReceiver{
+		engine:    config.MqttEngine,
 		logger:    logger,
+		StatusCh:  statusCh,
 		PopStatus: make(map[string]tapir.TapirFunctionStatus),
 		EdmStatus: make(map[string]tapir.TapirFunctionStatus),
 	}, nil
 }
 
-func (h *MqttHandler) Start() {
+func (h *StatusReceiver) Start() {
 	statusTopic := viper.GetString("tapir.status.topic")
 	if statusTopic == "" {
 		TEMExiter("MQTT Engine %s: MQTT status topic not set", h.engine.Creator)
@@ -66,23 +64,13 @@ func (h *MqttHandler) Start() {
 	log.Printf("MQTT Engine %s: Adding topic '%s' to MQTT Engine", h.engine.Creator, statusTopic)
 
 	subch := make(chan tapir.MqttPkgIn, 100)
-	_, err = h.engine.SubToTopic(statusTopic, validatorkey, subch, "struct", true)
+	_, err = h.engine.SubToTopic(statusTopic, validatorkey, h.StatusCh, "struct", true)
 	if err != nil {
 		TEMExiter("Error adding sub topic %s to MQTT Engine: %v", statusTopic, err)
 	}
-	log.Printf("MQTT Engine %s: Starting", h.engine.Creator)
-	_, _, _, err = h.engine.StartEngine()
-	if err != nil {
-		log.Fatalf("Error starting MQTT engine: %v", err)
-	}
 
 	for pkg := range subch {
-
-		//		switch mqttMsg.(type) {
-		//		case tapir.MqttData:
-		//			p := mqttMsg.(tapir.MqttData)
-		// log.Printf("MQTT Engine %s: Received message: %+v", h.engine.Creator, p)
-		log.Printf("TAPIR-SLOGGER MQTT Handler: Received message on topic %s", pkg.Topic)
+		log.Printf("TAPIR-SLOGGER Status Receiver: Received message on topic %s", pkg.Topic)
 
 		switch {
 		case strings.HasPrefix(pkg.Topic, "status/up/"):
@@ -111,15 +99,11 @@ func (h *MqttHandler) Start() {
 	}
 }
 
-func (h *MqttHandler) Stop() {
-	h.engine.StopEngine()
-}
-
-func (h *MqttHandler) updateStatus(status tapir.TapirFunctionStatus) {
+func (h *StatusReceiver) updateStatus(status tapir.TapirFunctionStatus) {
 	h.PopStatus[status.FunctionID] = status
 }
 
-func (h *MqttHandler) GetStatus() tapir.SloggerCmdResponse {
+func (h *StatusReceiver) GetStatus() tapir.SloggerCmdResponse {
 	resp := tapir.SloggerCmdResponse{
 		PopStatus: h.PopStatus,
 		EdmStatus: h.EdmStatus,

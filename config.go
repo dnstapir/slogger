@@ -18,15 +18,18 @@ import (
 	"os"
 	"time"
 
+	"github.com/dnstapir/tapir"
 	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
-	BootTime    time.Time
-	ApiConfig   ApiConfig   `yaml:"apiserver"`
-	LogConfig   LogConfig   `yaml:"log"`
-	TapirConfig TapirConfig `yaml:"tapir"`
-	MqttHandler *MqttHandler
+	BootTime       time.Time
+	ApiConfig      ApiConfig   `yaml:"apiserver"`
+	LogConfig      LogConfig   `yaml:"log"`
+	TapirConfig    TapirConfig `yaml:"tapir"`
+	StatusReceiver *StatusReceiver
+	PubKeyReceiver *PubKeyReceiver
+	MqttEngine     *tapir.MqttEngine
 }
 
 type TapirConfig struct {

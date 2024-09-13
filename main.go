@@ -64,15 +64,36 @@ func main() {
 	// Initialize logger
 	logger := NewLogger(config.LogConfig.File)
 
-	// Initialize MQTT handler
-	mqttHandler, err := NewMqttHandler(config, logger)
+	meng, err := tapir.NewMqttEngine("tapir-slogger", config.TapirConfig.MqttConfig.ClientID, tapir.TapirSub, nil, log.Default())
 	if err != nil {
-		log.Fatalf("Error initializing MQTT handler: %v", err)
+		log.Fatalf("Error initializing MQTT engine: %v", err)
 	}
-	config.MqttHandler = mqttHandler
+	config.MqttEngine = meng
+	log.Printf("MQTT Engine: Starting")
+	_, _, _, err = meng.StartEngine()
+	if err != nil {
+		log.Fatalf("Error starting MQTT engine: %v", err)
+	}
+
+	// Initialize Status Receiver
+	srecv, err := NewStatusReceiver(config, logger)
+	if err != nil {
+		log.Fatalf("Error initializing Status Receiver: %v", err)
+	}
+	config.StatusReceiver = srecv
 
 	// Start MQTT handler
-	go mqttHandler.Start()
+	go srecv.Start()
+
+	// Initialize PubKeyReceiver
+	pkeyrecv, err := NewPubKeyReceiver(config, logger)
+	if err != nil {
+		log.Fatalf("Error initializing PubKey Receiver: %v", err)
+	}
+	config.PubKeyReceiver = pkeyrecv
+
+	// Start MQTT handler
+	go srecv.Start()
 
 	// Initialize API handler
 	//apiHandler := NewAPIHandler(config, mqttHandler)
@@ -88,7 +109,7 @@ func main() {
 	<-sigs
 
 	// Cleanup
-	mqttHandler.Stop()
+	config.MqttEngine.StopEngine()
 	logger.Close()
 	log.Println("tapir-slogger stopped")
 }

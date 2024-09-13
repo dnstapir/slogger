@@ -74,15 +74,15 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				Msg:    "Daemon was happy, but now winding down",
 			}
 			log.Printf("Stopping MQTT engine\n")
-			conf.MqttHandler.Stop()
+			conf.MqttEngine.StopEngine()
 			//			conf.Internal.APIStopCh <- struct{}{}
 
 		case "mqtt-start":
-			conf.MqttHandler.Start()
+			conf.MqttEngine.StartEngine()
 			resp.Msg = "MQTT engine started"
 
 		case "mqtt-stop":
-			conf.MqttHandler.Stop()
+			conf.MqttEngine.StopEngine()
 			resp.Msg = "MQTT engine stopped"
 
 		default:
@@ -131,11 +131,11 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 // func (h *APIHandler) handleStatus(w http.ResponseWriter, r *http.Request) {
 func APIstatus(conf *Config) func(w http.ResponseWriter, r *http.Request) {
-	mqttHandler := conf.MqttHandler
+	statusReceiver := conf.StatusReceiver
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("TAPIR-SLOGGER Received /status request")
-		status := mqttHandler.GetStatus()
+		status := statusReceiver.GetStatus()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(status)
 	}
