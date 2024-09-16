@@ -93,7 +93,7 @@ func main() {
 	config.PubKeyReceiver = pkeyrecv
 
 	// Start MQTT handler
-	go srecv.Start()
+	go pkeyrecv.Start()
 
 	// Initialize API handler
 	//apiHandler := NewAPIHandler(config, mqttHandler)

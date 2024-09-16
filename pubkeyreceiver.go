@@ -15,11 +15,15 @@
 package main
 
 import (
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"log"
 	"strings"
 
 	"github.com/dnstapir/tapir"
+	"github.com/lestrrat-go/jwx/jwa"
+	"github.com/lestrrat-go/jwx/v2/jws"
 	"github.com/spf13/viper"
 )
 
@@ -52,13 +56,19 @@ func (h *PubKeyReceiver) Start() {
 
 	log.Printf("MQTT Engine %s: Adding topic '%s' to MQTT Engine", h.engine.Creator, pubkeyTopic)
 
-	subch := make(chan tapir.MqttPkgIn, 100)
+	// subch := make(chan tapir.MqttPkgIn, 100)
 	_, err := h.engine.SubToTopic(pubkeyTopic, nil, h.PubKeyCh, "struct", false)
 	if err != nil {
 		TEMExiter("Error adding sub topic %s to MQTT Engine: %v", pubkeyTopic, err)
 	}
 
-	for pkg := range subch {
+	cn, caCertPool, clientCert, err := tapir.FetchTapirClientCert(log.Default(), nil)
+	if err != nil {
+		TEMExiter("Error fetching MQTT client cert: %v", err)
+	}
+	log.Printf("Common Name: %s, CA Cert Pool: %d, Client Cert: %+v", cn, len(caCertPool.Subjects()), clientCert)
+
+	for pkg := range h.PubKeyCh {
 		log.Printf("TAPIR-SLOGGER Pubkey Receiver: Received message on topic %s", pkg.Topic)
 
 		switch {
@@ -76,6 +86,45 @@ func (h *PubKeyReceiver) Start() {
 				}
 
 				log.Printf("Received pubkey upload from sender: %s, component: %s\n%s", edgeId, edgeComponent, pku.JWSMessage)
+
+				// Parse the client certificate from PEM format
+				block, _ := pem.Decode([]byte(pku.ClientCertPEM))
+				if block == nil {
+					log.Printf("Failed to decode PEM block containing the client certificate")
+					continue
+				}
+
+				clientCert, err := x509.ParseCertificate(block.Bytes)
+				if err != nil {
+					log.Printf("Failed to parse client certificate: %v", err)
+					continue
+				}
+
+				// Verify the client certificate using the caCertPool
+				_, err = clientCert.Verify(x509.VerifyOptions{
+					Roots: caCertPool,
+				})
+				if err != nil {
+					log.Printf("Failed to verify client certificate: %v", err)
+					// List the authorities in the cert pool
+					for _, subject := range caCertPool.Subjects() {
+						cert, _ := x509.ParseCertificate(subject)
+						log.Printf("Cert Pool Authority: Subject: '%s', Issuer: '%s', NotBefore: '%v', NotAfter: '%v'",
+							cert.Subject, cert.Issuer, cert.NotBefore, cert.NotAfter)
+					}
+					log.Printf("Client certificate was signed by: %s", clientCert.Issuer)
+					continue
+				}
+
+				// Validate the JWS signature using the client certificate
+				payload, err := jws.Verify([]byte(pku.JWSMessage), jws.WithKey(jwa.ES256, clientCert.PublicKey))
+				if err != nil {
+					log.Printf("Failed to verify JWS signature: %v", err)
+					continue
+				}
+
+				// Print the client public key
+				log.Printf("Verified public key: %s", string(payload))
 
 			} else {
 				log.Printf("TAPIR-SLOGGER Pubkey Receiver: Invalid topic format: %s", pkg.Topic)
