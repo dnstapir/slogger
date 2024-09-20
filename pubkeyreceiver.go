@@ -17,12 +17,11 @@ package main
 import (
 	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"log"
 	"strings"
 
 	"github.com/dnstapir/tapir"
-	"github.com/lestrrat-go/jwx/jwa"
+	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jws"
 	"github.com/spf13/viper"
 )
@@ -62,11 +61,11 @@ func (h *PubKeyReceiver) Start() {
 		TEMExiter("Error adding sub topic %s to MQTT Engine: %v", pubkeyTopic, err)
 	}
 
-	cn, caCertPool, clientCert, err := tapir.FetchTapirClientCert(log.Default(), nil)
+	cn, caCertPool, _, err := tapir.FetchTapirClientCert(log.Default(), nil)
 	if err != nil {
 		TEMExiter("Error fetching MQTT client cert: %v", err)
 	}
-	log.Printf("Common Name: %s, CA Cert Pool: %d, Client Cert: %+v", cn, len(caCertPool.Subjects()), clientCert)
+	log.Printf("Common Name: %s, CA Cert Pool has %d certs", cn, len(caCertPool.Subjects()))
 
 	for pkg := range h.PubKeyCh {
 		log.Printf("TAPIR-SLOGGER Pubkey Receiver: Received message on topic %s", pkg.Topic)
@@ -78,6 +77,7 @@ func (h *PubKeyReceiver) Start() {
 				edgeId := parts[2]
 				edgeComponent := parts[3]
 
+				// Start of Selection
 				var pku tapir.PubKeyUpload
 				err := json.Unmarshal(pkg.Payload, &pku)
 				if err != nil {
@@ -87,37 +87,27 @@ func (h *PubKeyReceiver) Start() {
 
 				log.Printf("Received pubkey upload from sender: %s, component: %s\n%s", edgeId, edgeComponent, pku.JWSMessage)
 
-				// Parse the client certificate from PEM format
-				block, _ := pem.Decode([]byte(pku.ClientCertPEM))
-				if block == nil {
-					log.Printf("Failed to decode PEM block containing the client certificate")
-					continue
-				}
-
-				clientCert, err := x509.ParseCertificate(block.Bytes)
-				if err != nil {
-					log.Printf("Failed to parse client certificate: %v", err)
-					continue
-				}
-
-				// Verify the client certificate using the caCertPool
-				_, err = clientCert.Verify(x509.VerifyOptions{
-					Roots: caCertPool,
-				})
-				if err != nil {
-					log.Printf("Failed to verify client certificate: %v", err)
-					// List the authorities in the cert pool
-					for _, subject := range caCertPool.Subjects() {
-						cert, _ := x509.ParseCertificate(subject)
-						log.Printf("Cert Pool Authority: Subject: '%s', Issuer: '%s', NotBefore: '%v', NotAfter: '%v'",
-							cert.Subject, cert.Issuer, cert.NotBefore, cert.NotAfter)
+				// Start of Selection
+				// Validate the JWS signature using the CA cert pool and the cert chain in the JWS header
+				keySet := jwk.NewSet()
+				for _, certBytes := range caCertPool.Subjects() {
+					cert, err := x509.ParseCertificate(certBytes)
+					if err != nil {
+						log.Printf("Failed to parse certificate: %v", err)
+						continue
 					}
-					log.Printf("Client certificate was signed by: %s", clientCert.Issuer)
-					continue
+					jwkKey, err := jwk.FromRaw(cert.PublicKey)
+					if err != nil {
+						log.Printf("Failed to create JWK from public key: %v", err)
+						continue
+					}
+					if err := keySet.AddKey(jwkKey); err != nil {
+						log.Printf("Failed to add JWK to key set: %v", err)
+						continue
+					}
 				}
 
-				// Validate the JWS signature using the client certificate
-				payload, err := jws.Verify([]byte(pku.JWSMessage), jws.WithKey(jwa.ES256, clientCert.PublicKey))
+				payload, err := jws.Verify([]byte(pku.JWSMessage), jws.WithKeySet(keySet))
 				if err != nil {
 					log.Printf("Failed to verify JWS signature: %v", err)
 					continue
