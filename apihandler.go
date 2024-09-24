@@ -1,3 +1,17 @@
+// Copyright 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 /*
  * Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
@@ -60,15 +74,15 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				Msg:    "Daemon was happy, but now winding down",
 			}
 			log.Printf("Stopping MQTT engine\n")
-			conf.MqttHandler.Stop()
+			conf.MqttEngine.StopEngine()
 			//			conf.Internal.APIStopCh <- struct{}{}
 
 		case "mqtt-start":
-			conf.MqttHandler.Start()
+			conf.MqttEngine.StartEngine()
 			resp.Msg = "MQTT engine started"
 
 		case "mqtt-stop":
-			conf.MqttHandler.Stop()
+			conf.MqttEngine.StopEngine()
 			resp.Msg = "MQTT engine stopped"
 
 		default:
@@ -117,11 +131,11 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 // func (h *APIHandler) handleStatus(w http.ResponseWriter, r *http.Request) {
 func APIstatus(conf *Config) func(w http.ResponseWriter, r *http.Request) {
-	mqttHandler := conf.MqttHandler
+	statusReceiver := conf.StatusReceiver
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("TAPIR-SLOGGER Received /status request")
-		status := mqttHandler.GetStatus()
+		status := statusReceiver.GetStatus()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(status)
 	}

@@ -1,3 +1,17 @@
+// Copyright 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package main
 
 import (
@@ -50,15 +64,36 @@ func main() {
 	// Initialize logger
 	logger := NewLogger(config.LogConfig.File)
 
-	// Initialize MQTT handler
-	mqttHandler, err := NewMqttHandler(config, logger)
+	meng, err := tapir.NewMqttEngine("tapir-slogger", config.TapirConfig.MqttConfig.ClientID, tapir.TapirSub, nil, log.Default())
 	if err != nil {
-		log.Fatalf("Error initializing MQTT handler: %v", err)
+		log.Fatalf("Error initializing MQTT engine: %v", err)
 	}
-	config.MqttHandler = mqttHandler
+	config.MqttEngine = meng
+	log.Printf("MQTT Engine: Starting")
+	_, _, _, err = meng.StartEngine()
+	if err != nil {
+		log.Fatalf("Error starting MQTT engine: %v", err)
+	}
+
+	// Initialize Status Receiver
+	srecv, err := NewStatusReceiver(config, logger)
+	if err != nil {
+		log.Fatalf("Error initializing Status Receiver: %v", err)
+	}
+	config.StatusReceiver = srecv
 
 	// Start MQTT handler
-	go mqttHandler.Start()
+	go srecv.Start()
+
+	// Initialize PubKeyReceiver
+	pkeyrecv, err := NewPubKeyReceiver(config, logger)
+	if err != nil {
+		log.Fatalf("Error initializing PubKey Receiver: %v", err)
+	}
+	config.PubKeyReceiver = pkeyrecv
+
+	// Start MQTT handler
+	go pkeyrecv.Start()
 
 	// Initialize API handler
 	//apiHandler := NewAPIHandler(config, mqttHandler)
@@ -74,7 +109,7 @@ func main() {
 	<-sigs
 
 	// Cleanup
-	mqttHandler.Stop()
+	config.MqttEngine.StopEngine()
 	logger.Close()
 	log.Println("tapir-slogger stopped")
 }
