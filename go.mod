@@ -4,6 +4,7 @@ go 1.22.3
 
 require (
 	github.com/dnstapir/tapir v0.0.0-20240927111630-589bd474c6e4
+	github.com/google/uuid v1.4.0
 	github.com/gorilla/mux v1.8.1
 	github.com/lestrrat-go/jwx/v2 v2.0.21
 	github.com/spf13/pflag v1.0.5

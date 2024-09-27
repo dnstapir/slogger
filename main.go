@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/google/uuid"
 	flag "github.com/spf13/pflag"
 
 	"github.com/dnstapir/tapir"
@@ -23,9 +24,14 @@ var TEMExiter = func(args ...interface{}) {
 	os.Exit(1)
 }
 
+var mqttclientid string
+
 func main() {
+	mqttclientid = "tapir-slogger-" + uuid.New().String()
 	flag.BoolVarP(&tapir.GlobalCF.Debug, "debug", "d", false, "Debug mode")
 	flag.BoolVarP(&tapir.GlobalCF.Verbose, "verbose", "v", false, "Verbose mode")
+	flag.StringVarP(&mqttclientid, "client-id", "", mqttclientid, "MQTT client id, default is a random string")
+
 	flag.Parse()
 
 	var cfgFile string
@@ -54,7 +60,7 @@ func main() {
 	// Initialize logger
 	logger := NewLogger(config.LogConfig.File)
 
-	meng, err := tapir.NewMqttEngine("tapir-slogger", config.TapirConfig.MqttConfig.ClientID, tapir.TapirSub, nil, log.Default())
+	meng, err := tapir.NewMqttEngine("tapir-slogger", mqttclientid, tapir.TapirSub, nil, log.Default())
 	if err != nil {
 		log.Fatalf("Error initializing MQTT engine: %v", err)
 	}

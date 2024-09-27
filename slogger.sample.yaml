@@ -1,0 +1,27 @@
+apiserver:
+   addresses:		[ ":8080" ]
+   tlsaddresses:	[ ":8081" ]
+
+tapir:
+   mqtt:
+      server:		tls://mqtt.dev.dnstapir.se:8883
+      qos:		1
+      clientcert:	/etc/dnstapir/certs/mqttclient.crt
+      clientkey:	/etc/dnstapir/certs/mqttclient-key.pem
+      cacert:		/etc/dnstapir/certs/tapirCA.crt
+
+   status:
+      topic:		status/up/axfr/tapir-pop
+      validatorkey:     /etc/dnstapir/certs/mqttsigner-pub.pem
+
+   keyupload:
+      topic:		pubkey/up/#
+
+certs:
+   cacertfile:		/etc/dnstapir/certs/tapirCA.crt
+   tapir-slogger:
+      cert:		/etc/dnstapir/certs/mqttclient.crt
+      key:		/etc/dnstapir/certs/mqttclient-key.pem
+
+log:
+   file: 		/var/log/dnstapir/tapir-slogger.log
